@@ -1,0 +1,422 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+if (!require("tidyverse")) install.packages("tidyverse") 
+if (!require("DT")) install.packages("DT") 
+if (!require("lubridate")) install.packages("lubridate") 
+if (!require("leaflet")) install.packages("leaflet") 
+if (!require("leaflet.extras")) install.packages("leaflet.extras") 
+if (!require("maps")) install.packages("maps") 
+if (!require("data.table")) install.packages("data.table") 
+if (!require("ggthemes")) install.packages("ggthemes") 
+if (!require("rebus")) install.packages("rebus") 
+if (!require("clue")) install.packages("clue") 
+if (!require("skimr")) install.packages("skimr") 
+if (!require("plotly")) install.packages("plotly") 
+if (!require("knitr")) install.packages("knitr") 
+
+
+```
+
+
+```{r}
+data_try <- read.csv("nypd-motor-vehicle-collisions_1.csv", stringsAsFactors = F) 
+anyNA(data_try)
+sum(is.na(data_try))
+str(data_try)
+data <- data_try
+summary(data)
+data <- data_try %>% 
+  select(ACCIDENT.DATE, ACCIDENT.TIME, LATITUDE, LONGITUDE)
+
+anyNA(data)
+sum(is.na(data))
+```
+
+```{r}
+data %>% 
+  head(200) %>%
+  datatable(filter = 'top', options = list(
+  pageLength = 15, autoWidth = TRUE
+))
+```
+Sturcture
+```{r}
+data %>% 
+  glimpse()
+```
+
+Skim
+```{r}
+
+data %>% 
+  skim() %>% 
+  kable()
+```
+
+```{r}
+data %>% summary()
+```
+
+DATA CLEANING AND CORRECTING
+```{r}
+summary(data)
+sum(is.na(data$LATITUDE)) #196285
+sum(is.na(data$LONGITUDE))#196285
+sum(is.na(data$NUMBER.OF.PERSONS.INJURED)) # 17
+sum(is.na(data$NUMBER.OF.PERSONS.KILLED))  # 33
+cln_na_data <- data
+sapply(cln_na_data, function(x) sum(is.na(x))) 
+sapply(cln_na_data[!is.na(cln_na_data$LATITUDE),], function(x) sum(is.na(x)))
+sapply(cln_na_data[!is.na(cln_na_data$LONGITUDE),], function(x) sum(is.na(x)))
+sapply(cln_na_data[!is.na(cln_na_data$NUMBER.OF.PERSONS.INJURED),], function(x) sum(is.na(x)))
+sapply(cln_na_data[!is.na(cln_na_data$NUMBER.OF.PERSONS.KILLED),], function(x) sum(is.na(x)))
+
+cln_na_data <- cln_na_data[!is.na(cln_na_data$NUMBER.OF.PERSONS.INJURED),]
+cln_na_data <- cln_na_data[!is.na(cln_na_data$NUMBER.OF.PERSONS.KILLED),]
+cln_na_data <- cln_na_data[!is.na(cln_na_data$LATITUDE),]
+cln_na_data <- cln_na_data[!is.na(cln_na_data$LONGITUDE),]
+
+summary(cln_na_data)
+# so I created non na data
+# right now I will create spurious NA values
+
+anyNA(cln_na_data) # True = data set has NA 
+                   # False = no NA values in the data
+na_data <- cln_na_data
+na_data[sample(1:nrow(cln_na_data),196285), "LATITUDE"] <- NA
+na_data[sample(1:nrow(cln_na_data),196285), "LONGITUDE"] <- NA
+na_data[sample(1:nrow(cln_na_data),17), "NUMBER.OF.PERSONS.INJURED"] <- NA
+na_data[sample(1:nrow(cln_na_data),33), "NUMBER.OF.PERSONS.KILLED"] <- NA
+anyNA(na_data)
+
+# First try with 
+## MEAN
+mean_data <- na_data
+anyNA(mean_data)
+mean_data$NUMBER.OF.PERSONS.INJURED[is.na(mean_data$NUMBER.OF.PERSONS.INJURED)] <- median(cln_na_data$NUMBER.OF.PERSONS.INJURED)
+mean_data$NUMBER.OF.PERSONS.KILLED[is.na(mean_data$NUMBER.OF.PERSONS.KILLED)] <- median(cln_na_data$NUMBER.OF.PERSONS.KILLED)
+mean_data$LATITUDE[is.na(mean_data$LATITUDE)] <- mean(cln_na_data$LATITUDE)
+mean_data$LONGITUDE[is.na(mean_data$LONGITUDE)] <- mean(cln_na_data$LONGITUDE)
+
+summary(mean_data)
+
+# MEDIAN
+library(Hmisc)
+median_data <- na_data
+anyNA(median_data)
+
+median_data$NUMBER.OF.PERSONS.KILLED <- impute(median_data$NUMBER.OF.PERSONS.KILLED, median)
+median_data$NUMBER.OF.PERSONS.INJURED <- impute(median_data$NUMBER.OF.PERSONS.INJURED, median)
+median_data$LATITUDE <- impute(median_data$LATITUDE, median)
+median_data$LONGITUDE <- impute(median_data$LONGITUDE, median)
+
+summary(median_data)
+
+# Fill with KNN
+library(DMwR)
+knn_data <- na_data %>% 
+  select(LATITUDE, LONGITUDE,NUMBER.OF.PERSONS.INJURED,NUMBER.OF.PERSONS.KILLED)
+
+l <- sapply(na_data, function(x) which(is.na(x)))
+l
+
+cln_na_data[c(l$LATITUDE),]$LATITUDE  # Learn to real values
+knn_data <- knnImputation(knn_data, k=3)
+
+knn_data[c(l$LATITUDE),]$LATITUDE
+knn_data[c(l$LONGITUDE),]$LONGITUDE
+knn_data[c(l$NUMBER.OF.PERSONS.KILLED),]$NUMBER.OF.PERSONS.KILLED
+knn_data[c(l$NUMBER.OF.PERSONS.INJURED),]$NUMBER.OF.PERSONS.INJURED
+
+
+mean(cln_na_data[c(l$LATITUDE),]$LATITUDE - knn_data[c(l$LATITUDE),]$LATITUDE)
+mean(cln_na_data$LATITUDE)
+mean(cln_na_data[c(l$LONGITUDE),]$LONGITUDE - knn_data[c(l$LONGITUDE),]$LONGITUDE)
+mean(cln_na_data$LONGITUDE)
+
+
+
+####
+cln_na_data[c(l$LATITUDE),]$LATITUDE  # Learn to real values
+cln_na_data[c(l$LONGITUDE),]$LONGITUDE# Learn to real values
+
+knn_data <- knnImputation(knn_data, k=5)
+
+knn_data[c(l$LATITUDE),]$LATITUDE   # Learn values which are generated with knn
+knn_data[c(l$LONGITUDE),]$LONGITUDE # Learn values which are generated with knn
+####
+
+### Fill with Random Forest
+library(missForest)
+summary(na_data)
+rf_source <- na_data %>% 
+  select(LATITUDE, LONGITUDE,NUMBER.OF.PERSONS.INJURED,NUMBER.OF.PERSONS.KILLED)
+
+rf_data <- missForest(rf_source, ntree = 5)
+
+l <- sapply(na_data, function(x) which(is.na(x)))
+
+cln_na_data[c(l$LATITUDE),]$LATITUDE
+cln_na_data[c(l$LONGITUDE),]$LONGITUDE
+
+rf_data <- rf_data$ximp
+rf_data[c(l$LATITUDE),]$LATITUDE
+rf_data[c(l$LONGITUDE),]$LONGITUDE
+
+mean(cln_na_data[c(l$LATITUDE),]$LATITUDE - rf_data[c(l$LATITUDE),]$LATITUDE)
+summary(cln_na_data$LATITUDE)
+
+mean(cln_na_data[c(l$LONGITUDE),]$LONGITUDE - rf_data[c(l$LONGITUDE),]$LONGITUDE)
+summary(cln_na_data$LONGITUDE)
+
+
+
+## we learned the best way in there, but it  takes too much time so we canceled that idea, but we want to tell our idea, so thats the way that code stays there.
+```
+
+
+
+```{r}
+#
+data <- data %>% filter(LATITUDE>0, LONGITUDE<-72, LONGITUDE>-75)
+```
+
+
+
+```{r}
+set.seed(1)
+
+data %>% 
+  sample_n(size=7500) %>% 
+  leaflet() %>% 
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>% 
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addProviderTiles(providers$HikeBike.HikeBike, group = "color map") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light map") %>%
+  addCircleMarkers(~LONGITUDE, ~LATITUDE, radius = 1,
+                   color = "darkorchid", fillOpacity = 0.005) %>%
+  addLayersControl(baseGroups = c("Color map", "World StreetMap", "World Imagery"),
+    options = layersControlOptions(collapsed = T)
+  ) %>% 
+  addSearchOSM() 
+
+```
+
+
+```{r}
+set.seed(1)
+data %>% 
+  sample_n(size=7500) %>% 
+  leaflet() %>% 
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>% 
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addProviderTiles(providers$HikeBike.HikeBike, group = "color map") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light map") %>%
+  addCircleMarkers(~LONGITUDE, ~LATITUDE, radius = 1,
+                   color = "brown", fillOpacity = 0.005,
+                   clusterOptions = markerClusterOptions()) %>%
+  addLayersControl(
+    baseGroups = c("Color map", "World StreetMap", "World Imagery"),
+    options = layersControlOptions(collapsed = T)
+  ) %>% 
+  addSearchOSM() 
+```
+
+
+
+```{r}
+library(lubridate)
+
+format(seq.Date(as.Date('2000-01-01'), by = 'month', len = 12), "%b")
+
+data <- data %>% 
+  mutate(DATE_YYYYMMDD = str_extract(data$ACCIDENT.DATE, "\\d{4}-\\d{2}-\\d{2}"))
+data$ACCIDENT.DATE <- data$DATE_YYYYMMDD
+
+data <- data %>%
+         mutate(dateTime = ymd_hm(paste(ACCIDENT.DATE, ACCIDENT.TIME, sep = ' ')),
+         weekday = as.factor(weekdays(dateTime)),
+         weekend = if_else(weekday == 'Cunartesi'|weekday=='Pazar','Weekend','Weekdays'),
+         hour = hour(dateTime)+1)
+```
+
+
+
+```{r}
+ggplotly(data %>%
+           group_by(hour) %>%
+           summarise(accident_count=n()) %>%
+           ggplot(aes(hour, accident_count, fill = accident_count)) + geom_col() +
+           geom_label(aes(label=round(accident_count,1)), size=5, alpha=.8) +
+           scale_x_continuous(breaks=seq(1,24,1)) +
+           theme_economist() +
+           theme(legend.position = 'none') +
+           labs(title='Number of Accidents (Weekdays and Weekdend)',caption="source: Kaggle Open Source Data",
+                y="Number of Accidents", x="Hours in the Day"))
+```
+
+
+```{r}
+ggplotly(data %>%
+           filter(weekend == 'Weekdays') %>%
+           group_by(hour) %>%
+           summarise(accident_count=n()) %>% 
+           ggplot(aes(hour, accident_count, fill = accident_count)) +
+           geom_col() +
+           geom_label(aes(label=round(accident_count,1)), size=4, alpha=.8) +
+           scale_x_continuous(breaks=seq(1,24,1)) +
+           theme_economist() +
+           theme(legend.position = 'none') +
+           labs(title='Number of Accidents in Weekdays',
+                y="Number of Accidents", x="Hours in the Day"))
+```
+
+
+
+```{r}
+ggplotly(data %>% filter(weekend=='Weekend') %>%
+           group_by(hour) %>%
+           summarise(accident_count=n()) %>%
+           ggplot(aes(hour, accident_count, fill = accident_count)) +
+           geom_col() +
+           geom_label(aes(label=round(accident_count,1)), size=4, alpha=.8) +
+           scale_x_continuous(breaks=seq(1,24,1)) +
+           theme_economist() +
+           theme(legend.position = 'none') +
+           labs(title='Number of Accidents in Weekend',
+       y="Number of Accidents", x="Hours in the Day"))
+```
+
+Combined Weekday and Weekend Number of Accidents
+```{r}
+ggplotly(data %>%
+  group_by(hour, weekend) %>%
+  summarise(accident_count=n()) %>%
+  ggplot(aes(hour, accident_count, color = weekend)) +
+  geom_smooth(method = "auto", span = 1/2, se=F) +
+  geom_point(size = 4) +
+  labs(x = "Hours in the Day", y = "Number of Accidents") +
+  scale_x_continuous(breaks=seq(1,24,1)) +
+  theme_economist() +
+  scale_color_discrete("Weekdays vs. Weekend"))
+```
+
+
+
+```{r}
+counter <- 3
+
+Weekday_Top_10 <- data %>% 
+  filter(weekend=='Weekdays') %>%
+  group_by(lng=round(LONGITUDE,counter),lat=round(LATITUDE,counter)) %>% 
+  count() %>% 
+  arrange(desc(n)) %>% 
+  head(10)
+
+
+Weekend_Top_10 <- data %>%
+  filter(weekend=='Weekend') %>%
+  group_by(lng=round(LONGITUDE,counter),lat=round(LATITUDE,counter)) %>%
+  count() %>% 
+  arrange(desc(n)) %>% 
+  head(10)
+
+crashed_car <- makeIcon(
+  iconUrl = "http://www.buseilegeziyorum.com/wp-content/uploads/2019/12/hiclipart.com_.png",
+  iconWidth = 80, iconHeight = 80,
+  iconAnchorX = 20, iconAnchorY = 40
+)
+```
+
+Weekday Top 10 Accident locations
+```{r}
+Weekday_Top_10 %>%
+  leaflet() %>% 
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>% 
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addProviderTiles(providers$HikeBike.HikeBike, group = "color map") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light map") %>%
+  addScaleBar() %>%
+  addProviderTiles(providers$Esri.NatGeoWorldMap) %>%
+  addCircleMarkers(~lng, ~lat, radius = 1,
+                   color = "indianred", fillOpacity = 0.005) %>%
+  addMarkers(~lng, ~lat, icon = crashed_car, label = ~as.character(paste("Number of Accidents:",Weekday_Top_10$n))) %>%
+  addLayersControl(
+    baseGroups = c("World StreetMap", "Color map", "World Imagery"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+Weekend Top 10 Accident locations
+```{r}
+Weekend_Top_10 %>%
+  leaflet() %>% 
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>% 
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addProviderTiles(providers$HikeBike.HikeBike, group = "color map") %>% 
+  addProviderTiles(providers$CartoDB.Positron, group = "Light map") %>%
+  addScaleBar() %>% 
+  addProviderTiles(providers$Esri.NatGeoWorldMap) %>%
+  addCircleMarkers(~lng, ~lat, radius = 1, color = "lightcoral", fillOpacity = 0.005) %>%
+  addMarkers(~lng, ~lat, icon = crashed_car, label = ~as.character(paste("Number of Accidents:",Weekend_Top_10$n))) %>%
+  addLayersControl(
+    baseGroups = c("World StreetMap", "Color map", "World Imagery"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+
+
+```{r}
+data_coordinates <- data %>% select(LONGITUDE, LATITUDE)
+data_fm <- data
+```
+
+```{r}
+set.seed(0)
+data_kmeans <- data_coordinates %>%
+  kmeans(50, nstart=20)
+save(data_kmeans, file = "input/kmeans_data.rda")
+load("input/kmeans_data.rda")
+
+data_fm$cluster <- data_kmeans$cluster
+
+
+colors_in <- colorNumeric(
+  palette = "magma",
+  domain = data$cluster)
+```
+
+
+```{r}
+set.seed(1)
+data_fm %>% sample_n(size=10000) %>% 
+  leaflet() %>% 
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>% 
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addProviderTiles(providers$HikeBike.HikeBike, group = "color map") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "Light map") %>%
+  addScaleBar() %>%
+  addCircleMarkers(~LONGITUDE, ~LATITUDE, radius = 1,
+                   color = ~colors_in(cluster), fillOpacity = 0.005) %>%
+  addLayersControl(
+    baseGroups = c("World StreetMap", "Color map", "World Imagery"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+```{r}
+head(data_try)
+```
+
